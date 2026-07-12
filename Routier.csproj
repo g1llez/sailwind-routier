@@ -6,7 +6,7 @@
     <LangVersion>8.0</LangVersion>
     <Version>0.5.4</Version>
     <Authors>gaucl</Authors>
-    <Description>Sailwind trade-route generator and market recorder: snapshots prices to SQLite, plans daily trade routes, and sells route guides as in-game parchments.</Description>
+    <Description>Routier adds a trading layer to SailWind — market intel, agent contracts, and a real economic pulse to the archipelago.</Description>
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
   </PropertyGroup>
   <PropertyGroup>

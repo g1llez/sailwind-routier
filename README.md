@@ -1,5 +1,9 @@
 # Routier
 
+> Routier adds a trading layer to SailWind — market intel, agent contracts, and a real economic pulse to the archipelago.
+
+*FR : Routier ajoute une couche de commerce à SailWind — analyse de marché, contrats d'agents, et un vrai pouls économique pour l'archipel.*
+
 A **BepInEx** mod for **Sailwind** (0.38+) that turns trade-route planning into an
 in-game service: it snapshots market data every in-game hour, generates a handful of
 profitable trade routes per hub port each day, and sells them as portable parchment
