@@ -1,0 +1,6 @@
+{
+  "database_path": "C:/Program Files (x86)/Steam/steamapps/common/Sailwind/BepInEx/plugins/Routier/data/routier.db",
+  "host": "127.0.0.1",
+  "port": 8765,
+  "refresh_interval_seconds": 60
+}

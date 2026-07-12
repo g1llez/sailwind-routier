@@ -1,0 +1,64 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <AssemblyName>Routier</AssemblyName>
+    <RootNamespace>Routier</RootNamespace>
+    <LangVersion>8.0</LangVersion>
+    <Version>0.5.4</Version>
+    <Authors>gaucl</Authors>
+    <Description>Sailwind trade-route generator and market recorder: snapshots prices to SQLite, plans daily trade routes, and sells route guides as in-game parchments.</Description>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+  </PropertyGroup>
+  <PropertyGroup>
+    <SailwindDir Condition="'$(SailwindDir)' == ''">C:\Program Files (x86)\Steam\steamapps\common\Sailwind</SailwindDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Stub.System.Data.SQLite.Core.NetStandard" Version="1.0.118" GeneratePathProperty="true" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="0Harmony">
+      <HintPath>$(SailwindDir)\BepInEx\core\0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="BepInEx">
+      <HintPath>$(SailwindDir)\BepInEx\core\BepInEx.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Assembly-CSharp">
+      <HintPath>$(SailwindDir)\Sailwind_Data\Managed\Assembly-CSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine">
+      <HintPath>$(SailwindDir)\Sailwind_Data\Managed\UnityEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(SailwindDir)\Sailwind_Data\Managed\UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.PhysicsModule">
+      <HintPath>$(SailwindDir)\Sailwind_Data\Managed\UnityEngine.PhysicsModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.TextRenderingModule">
+      <HintPath>$(SailwindDir)\Sailwind_Data\Managed\UnityEngine.TextRenderingModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UI">
+      <HintPath>$(SailwindDir)\Sailwind_Data\Managed\UnityEngine.UI.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UIModule">
+      <HintPath>$(SailwindDir)\Sailwind_Data\Managed\UnityEngine.UIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+  <Target Name="CopySqliteInterop" AfterTargets="Build">
+    <MakeDir Directories="$(OutputPath)x64" />
+    <Copy
+      SourceFiles="$(PkgStub_System_Data_SQLite_Core_NetStandard)\runtimes\win-x64\native\SQLite.Interop.dll"
+      DestinationFolder="$(OutputPath)x64"
+      SkipUnchangedFiles="true"
+      Condition="Exists('$(PkgStub_System_Data_SQLite_Core_NetStandard)\runtimes\win-x64\native\SQLite.Interop.dll')" />
+  </Target>
+</Project>

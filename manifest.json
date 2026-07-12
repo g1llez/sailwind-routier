@@ -1,0 +1,9 @@
+{
+  "name": "Routier",
+  "version_number": "0.5.4",
+  "website_url": "https://github.com/g1llez/sailwind-routier",
+  "description": "Snapshots trade-post prices to SQLite, plans daily trade routes for hub ports, and sells them in-game as route-guide parchments. Companion web dashboard for charts and market lookup.",
+  "dependencies": [
+    "BepInEx-BepInExPack-5.4.2305"
+  ]
+}

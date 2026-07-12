@@ -1,0 +1,18 @@
+{
+  "name": "Example — calibrate from first buy then simulate 5 units",
+  "mode": "buy",
+  "params": {
+    "goods_soft_cap": 30,
+    "positive_price_mult": 1.0,
+    "negative_price_mult": 1.0,
+    "supply_purchase_limit": 0
+  },
+  "calibrate_from": {
+    "supply": 15.0,
+    "buy_raw": 48
+  },
+  "supply_start": 15.0,
+  "quantity": 5,
+  "expected_unit_prices": null,
+  "expected_total": null
+}

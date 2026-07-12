@@ -1,0 +1,24 @@
+# .NET build output
+bin/
+obj/
+x64/
+
+# Mod runtime data (created at install time, not part of the repo)
+data/
+*.db
+*.db-*
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+env/
+
+# Editors / OS
+.vscode/
+.idea/
+*.suo
+.DS_Store
+Thumbs.db
