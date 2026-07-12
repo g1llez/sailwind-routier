@@ -75,7 +75,13 @@ Tabs: market lookup (prices/supply per port + history chart), currency & reputat
 
 ```
 Routier/
-├── *.cs              # Mod: snapshots, route generation/optimizer, kiosk UI, parchments
+├── src/               # BepInEx mod (C#)
+│   ├── Plugin.cs / PluginInfo.cs
+│   ├── Market/        # Snapshots, SQLite, goods/ports catalog
+│   ├── Routes/        # Route generator, optimizer, daily catalog
+│   ├── Parchment/     # Page models, rendering, save-backed scrolls
+│   ├── UI/            # Route agent kiosk + offer selection screen
+│   └── Patches/       # Harmony patches (save, ship items, scrolls)
 ├── Routier.csproj
 ├── build.ps1          # Build + install into a local Sailwind copy
 ├── manifest.json      # Thunderstore package manifest
