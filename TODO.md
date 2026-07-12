@@ -1,116 +1,246 @@
-# Routier — TODO
+# Routier — Roadmap
 
-## Database
+> **Tagline:** Routier adds a trading layer to SailWind — market intel, agent
+> contracts, and a real economic pulse to the archipelago.
 
-- [ ] **DB per save slot** — Today there's a single database (`BepInEx/plugins/Routier/data/routier.db`) shared by every save. To confirm: do snapshots from one save mix with another? If so, isolate the DB per slot (e.g. `routier_slot1.db`, `routier_slot2.db`, …) by detecting the active slot on the mod side, and align `web/config.json` / `database_path` accordingly.
+**Version strategy:** ship incremental **0.6–0.9** builds while working toward a
+polished **1.0** release. **1.1** adds the route charter; **1.2** adds contraband
+runs; **2.0** is the full agent storyline (Discord poll: players want narrative
+progression).
 
-## Agents & parchments (realistic roadmap — by version)
+---
 
-Services offered by an agent / company in **major cities**. The player **buys** a
-service; the deliverable is a **parchment** (data **frozen at purchase time**) that
-they keep on hand.
+## Shipped (v0.1 – v0.5)
 
-### Target architecture
+| Area | Done |
+|------|------|
+| **Market** | Hourly snapshots → SQLite; goods/ports catalog; currency & reputation |
+| **Sim** | Python bulk-pricing model + route optimizer; C# port 1:1; web parity harness |
+| **Routes** | Daily generation at hub ports (local + regional); per-save RNG seed |
+| **Parchment** | Manifest-style pages (summary + per-port receipts); save-backed scroll item |
+| **UI** | Route agent kiosk (placeholder cube); Canvas offer picker with detail + buy |
+| **Web** | Dashboard: market lookup, charts, route planner, simulator |
+| **Repo** | `src/` layout, GitHub, Thunderstore manifest, MIT license |
+
+---
+
+## Path to 1.0 — Release milestone
+
+**1.0 goal:** a complete, shippable trading-contract experience — polished parchment,
+real hub agent, save-safe data — then publish (Thunderstore + GitHub release).
+
+```mermaid
+flowchart LR
+  A["0.6 Save-bound DB"] --> B["0.7 Book UI"]
+  B --> C["0.8 Agent + parchment polish"]
+  C --> D["0.9 Release prep"]
+  D --> E["1.0 🚢 Release"]
+  E --> F["1.1 Route charter"]
+  F --> H["1.2 Contraband"]
+  H --> G["2.0 Storyline"]
+```
+
+### v0.6.x — Database per save slot
+
+Each playthrough must own its market history; no cross-save snapshot bleed.
+
+- [ ] Resolve DB path from `SaveSlots.currentSlot` → `data/routier_slot{N}.db`
+- [ ] Re-open / swap DB on game load (`SaveLoadManager` post-load hook)
+- [ ] Handle legacy `routier.db` (log + ignore or one-time migration note)
+- [ ] Web dashboard: slot-aware `database_path` docs / env override
+- [ ] Parity script `check_route_parity.py`: accept slot suffix
+
+**Reference:** `SaveSlots.GetCurrentSavePath()` → `slot{N}.save`
+
+### v0.7.x — Route offers as a book (mission-log style)
+
+Replace the flat **Canvas overlay** with a **3D book UI** like the in-game mission log.
+
+- [ ] Reuse patterns from `MissionListUI` (`book`), `MissionDetailsUI`,
+  `GPButtonListedMission`
+- [ ] Left page: today's offers (tier, kind, price, profit) — up to 6 rows
+- [ ] Right page: route detail + buy
+- [ ] Modal flow from agent (`MouseLook`, `Refs.SetPlayerControl`)
+- [ ] VR: anchor on `PortDude.missionTable` when applicable
+- [ ] Retire Canvas UI once book UI is stable
+
+### v0.8.x — Real agent & parchment polish
+
+**Agent** — replace the cube; **parchment** — final manifest quality for 1.0.
+
+**Agent**
+
+- [ ] Hub presence at `PortDude.missionTable` — static figure or `QuestDude`-style
+  trigger (no custom rig v1)
+- [ ] Opens v0.7 book UI (single purchase flow)
+- [ ] `lookText` + short hook ("Route agent — today's manifests")
+- [ ] Desk / scroll prop (`GPButtonPortMissions`, `ShipyardDocuments` precedent)
+- [ ] Remove `PrimitiveType.Cube` from `HubKioskInstaller`
+
+**Parchment (1.0 quality bar)**
+
+- [ ] Layout pass: no overlap, consistent manifest typography (ongoing)
+- [ ] Authenticity seal / stamp (company, issuing port, game day)
+- [ ] In-game QA on several hub routes (multi-region, long names, empty legs)
+
+### v0.9.x — Release prep
+
+- [ ] Playtest full loop: 8am generation → agent → book → buy → read parchment → save/load
+- [ ] Thunderstore package (icon, README, changelog, version bump)
+- [ ] GitHub release + tagged build (`build.ps1`)
+- [ ] Config defaults reviewed; breaking changes documented
+- [ ] Optional: historical bulletin deferred post-1.0
+
+### v1.0 — 🚢 Release
+
+**Ship when all of the above are done.**
+
+- [ ] Tag `v1.0.0`, publish Thunderstore + GitHub release
+- [ ] README / manifest reflect 1.0 feature set
+- [ ] Known limitations listed (no charter, contraband, or storyline yet)
+
+**1.0 delivers:** daily route guides at hub ports, save-bound market DB, book-style
+offer browser, real agent interactable, polished manifest parchment.
+
+---
+
+## v1.1 — Route charter
+
+**Goal:** buy exclusivity on a **single good** along a **two-island corridor** — AI
+traders abstain from that good on those ports for N days.
+
+- [ ] New service tier on top of the route manifest (premium purchase)
+- [ ] Harmony patch on `TraderBoat` — skip the chartered good at corridor ports
+- [ ] Save-backed expiration (`GameState.day`, "valid until day N" on parchment)
+- [ ] Honest limits: `EconCycle`, player trades, and missions still apply (no absolute
+  monopoly)
+- [ ] Sim / web tool to preview charter value before buying
+
+**Scope:** 1 good, 2 islands (A ↔ B or A → B). Multi-hop charters = later.
+
+---
+
+## v1.2 — Contraband
+
+**Goal:** a **hidden agent** sells high-profit **illegal goods** — separate from the
+official route agent at hubs. Selling carries a real risk of being caught by port
+authorities.
+
+### Concept
+
+- **Hidden contact** — not at the mission desk; discoverable location (tavern back
+  room, night-only dock, reputation-gated whisper, etc.)
+- **Contraband manifest** — parchment listing buy port, sell port, good, qty, expected
+  profit (higher margin than legal routes)
+- **Sell-side risk** — chance (or deterministic checks) of seizure / fine / reputation
+  hit when unloading illegal cargo at port
+- **No charter overlap** — contraband goods are outside the 1.1 TraderBoat abstention
+  model (different ruleset)
+
+### Implementation sketch
+
+- [ ] Catalog of contraband goods per archipelago (subset of `goods_catalog` or mod-tagged
+  illegal list)
+- [ ] Hidden agent interactable + separate offer UI (book page style or compact list)
+- [ ] Route planner variant: legal sim + contraband premium multiplier
+- [ ] **Catch on sell** — hook port entry / market sell (`QuestItemDetector` precedent:
+  seizure, bribe, reputation penalty)
+- [ ] Config: catch probability, fine tiers, reputation damage, time-of-day modifiers
+- [ ] Parchment disclaimer: *"Unregistered cargo — authorities may intervene"*
+- [ ] Save-backed: active contraband run, heat/cooldown per port (optional)
+
+### Design questions (TBD)
+
+- [ ] Random catch % vs. fixed inspection windows (like vanilla `activeFrom` / `activeUntil`)?
+- [ ] Does getting caught affect the **official** route agent's trust (storyline hook for 2.0)?
+- [ ] One contraband offer per day vs. player-initiated contact?
+
+**Reference:** `QuestItemDetector` — illegal cargo seizure, bribe, reputation reset at port.
+
+---
+
+## v2.0 — Agent storyline
+
+**Goal:** the route agent becomes a **narrative spine** — unique missions over time
+that evolve the player across archipelagos. Aligns with Discord poll (storyline > pure
+mechanics).
+
+### Pillars
+
+1. **Recurring agent** — same company / character at hubs (or one archipelago lead per
+   region), not a faceless kiosk.
+2. **Unique missions** — scripted beats tied to reputation, wealth, or ports visited;
+   not just rerolled daily routes.
+3. **Progression over time** — unlock tiers, new corridors, harder contracts, story
+   branches as `GameState.day` and regions advance.
+4. **Archipelago arc** — missions that pull the player between island groups (local →
+   regional → cross-archipelago stakes).
+
+### Early design questions (TBD)
+
+- [ ] One global storyline vs. per-archipelago threads?
+- [ ] Mission data: JSON mod content vs. DB-driven vs. hybrid?
+- [ ] Failure / expiry: do story missions penalize like vanilla cargo missions?
+- [ ] Integration with 1.1 charter (story rewards = charter discounts?)
+
+### Out of scope for 2.0 v1
+
+- Full voice acting, cinematics, new 3D character models
+- Replacing vanilla mission system entirely
+
+---
+
+## Architecture
 
 ```
-Agent (NPC)  →  purchase + generation from routier.db  →  parchment item/sheet  →  read in-game
+                    ┌─────────────────────────────────────┐
+  v1.0              │  Agent → book UI → buy → parchment  │
+                    └─────────────────┬───────────────────┘
+                                      │
+                              routier_slot{N}.db
+                                      │
+  v1.1              ┌─────────────────▼───────────────────┐
+                    │  + Route charter (TraderBoat patch) │
+                    └─────────────────┬───────────────────┘
+                                      │
+  v1.2              ┌─────────────────▼───────────────────┐
+                    │  + Contraband agent & sell risk     │
+                    └─────────────────┬───────────────────┘
+                                      │
+  v2.0              ┌─────────────────▼───────────────────┐
+                    │  + Story missions & archipelago arc │
+                    └─────────────────────────────────────┘
 ```
 
-- Take inspiration from `TradeReceiptsUI` (TextMesh tables, save-backed) rather than
-  vanilla `ShipItemScroll` (fixed textures in `ScrollDirectory`)
-- JSON payload on the item (`type`, `title`, `game_day`, `rows`, `chart_points`, …) —
-  content doesn't track the market after purchase
-- **Authenticity seal** on every parchment (visual + metadata): company stamp/seal,
-  agent name, issuing port, in-game day — reinforces immersion and distinguishes
-  bulletin vs. manifest vs. charter
-- Web charts (Chart.js) stay on the dashboard; in-game = **tables** first, a rendered
-  curve texture later
+---
 
-### Services
+## Backlog / references
 
-#### 1. Historical bulletin (e.g. rum)
-
-- Average, min/max per port / archipelago, trend over N days
-- Source: `port_prices` snapshots
-- Content: period, per-port table (avg / min / max / last price), best buy/sell,
-  disclaimer "prices as of day X"
-
-#### 2. Trade manifest (purchased route)
-
-- Stops: port A → buy X, port B → sell Y
-- Quantities, weight / volume, peak summary (pounds, barrels, crates)
-- Estimated profit (**bulk sim** + displayed currency), cost = % of planned profit
-
-#### 3. Route charter (premium on top of the manifest)
-
-- **Not in vanilla** — Harmony patch on `TraderBoat`
-- N days (2–5): AI abstains from the **good** at corridor ports
-- Expires on `GameState.day`, stamped "valid until day N"
-- Honest limit: no absolute monopoly (`EconCycle`, the player, and missions keep going)
-
-### Implementation plan
-
-#### v0.3 — Proof of concept
-
-- [ ] `RoutierAgent` at 1 test port (e.g. Gold Rock) — trigger + dialogue (`QuestDude` /
-  `PortDude` pattern, no new 3D model)
-- [ ] Catalogue: 1 service (*Bulletin* for one good, N days)
-- [ ] Purchase: deduct gold (`PlayerGold`), read `routier.db`, generate payload
-- [ ] Parchment UI in the style of `TradeReceiptsUI` (TextMesh, tables) — **no 3D
-  object** at first
-- [ ] Authenticity seal/stamp (texture or TextMesh: company, port, day)
-
-#### v0.4 — Portable parchment
-
-- [ ] `RoutierParchmentItem` (custom `ShipItem`) spawned on purchase (`SpawnGood` or
-  equivalent)
-- [ ] Pickup / interact → opens the parchment UI
-- [ ] Payload serialization in the save (`SaveablePrefab` + custom data)
-
-#### v0.5 — Manifest + integrated sim
-
-- [ ] Manifest service (route A→B, bulk sim, weight from `goods_catalog`)
-- [ ] Service price (% of planned profit)
-- [ ] Route charter (Harmony `TraderBoat`, save-backed expiration)
-
-#### v0.6 — Polish
-
-- [ ] Simple chart (generated `Texture2D` → 3D parchment page)
-- [ ] 3D seal on the parchment mesh (reuse `parchmentMaterial` / `UISoundPlayer` sounds
-  if possible)
-- [ ] Multiple agents / archipelagos
-- [ ] Specialists per good type (optional)
-
-### Game references (decompiled v0.38)
+### Game systems (decompiled v0.38)
 
 | System | Role |
-|---------|------|
-| `TradeReceiptsUI` | UI model + save persistence |
-| `ShipItemScroll` | 3D immersion (prefab textures — not dynamic on its own) |
-| `QuestDude` / `PortDude` | NPC interaction |
-| `Shopkeeper` / `BuyItemUI` | Purchase flow |
-| `EconomyUI` | Multi-port price tables |
+|--------|------|
+| `MissionListUI` / `book` | Book-style offer browser (v0.7 → 1.0) |
+| `MissionLog` | Journal / log rows |
+| `MissionDetailsUI` | Detail page layout |
+| `TradeReceiptsUI` | Table columns on panels |
+| `ShipItemScroll` | Physical parchment item |
+| `SaveSlots` | Per-save DB (v0.6) |
+| `QuestDude` / `PortDude` | Agent interaction (v0.8 → 1.0) |
+| `TraderBoat` | Charter abstention target (v1.1) |
+| `QuestItemDetector` | Illegal cargo seizure / bribe / rep hit (v1.2 contraband) |
 
-### Mod data (sim + parchments)
+### Sim & data hygiene
 
-- [x] `market_globals`, `goods_catalog.base_value`, `ports_catalog` — captured on startup
-- [x] Bulk sim validated — beer @ Gold Rock (`sim/fixtures/gold_rock_beer.json`)
-- [x] Web **Simulator** tab (displayed currency, first-price calibration)
-- [ ] Validate a 2nd good (e.g. rum)
-- [ ] Calibrate `supply` from the first observed price on the API side (already partly
-  done on the web side)
+- [x] `market_globals`, `goods_catalog`, `ports_catalog`
+- [x] Bulk sim — beer @ Gold Rock (`sim/fixtures/gold_rock_beer.json`)
+- [x] Web Simulator + Route tabs
+- [ ] Calibrate `supply` from first observed price (web API, partial)
+- [ ] Long-route playtest (e.g. Oasis → Academy → Gold Rock City)
 
-## Route planner (POC)
+### Post-1.0 ideas (not scheduled)
 
-- [x] `sim/route_optimizer.py` logic — deals constrained per route (buy before sell),
-  bulk sim, optimal sell split
-- [x] **Sequential** port-by-port planning (sell → cash/weight freed → downstream buy)
-- [x] `/api/route-plan` API + web **Route** tab
-- [ ] Test with a real route (e.g. Oasis → Academy → Gold Rock City)
-- [x] Multiple goods on the same route (same good possible after an intermediate sale)
-- [ ] Integrate into the parchment manifest (v0.5)
-
-### Prerequisites before parchments go live
-
-- [ ] **DB per save slot** (see above)
-- [ ] Stable bulk sim with higher capital (user testing)
+- Historical price bulletin (1 good, N days, from snapshots)
+- Simple price chart as parchment texture
+- Per-good specialist agents
+- Multi-hop route charter
