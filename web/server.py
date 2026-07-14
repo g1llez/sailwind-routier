@@ -1,7 +1,9 @@
 import json
 import math
+import os
 import sqlite3
 from pathlib import Path
+from typing import Optional
 
 from flask import Flask, jsonify, render_template, request
 
@@ -293,15 +295,60 @@ def load_config():
 
 
 CFG = load_config()
-DB_PATH = Path(CFG.get("database_path", ROOT.parent / "data" / "routier.db"))
+
+
+def data_directory() -> Path:
+    env_data = os.environ.get("ROUTIER_DATA_DIR")
+    if env_data:
+        return Path(env_data)
+    game_dir = os.environ.get("SAILWIND_DIR")
+    if game_dir:
+        return Path(game_dir) / "BepInEx" / "plugins" / "Routier" / "data"
+    if CFG.get("data_directory"):
+        return Path(CFG["data_directory"])
+    legacy = CFG.get("database_path")
+    if legacy:
+        path = Path(legacy)
+        if path.suffix.lower() == ".db":
+            return path.parent
+        return path
+    program_files_x86 = os.environ.get("ProgramFiles(x86)")
+    if program_files_x86:
+        return (
+            Path(program_files_x86)
+            / "Steam"
+            / "steamapps"
+            / "common"
+            / "Sailwind"
+            / "BepInEx"
+            / "plugins"
+            / "Routier"
+            / "data"
+        )
+    return ROOT.parent / "data"
+
+
+def request_save_slot() -> int:
+    slot = request.args.get("slot", type=int)
+    if slot is None:
+        slot = int(CFG.get("default_save_slot", 0))
+    return max(0, min(5, slot))
+
+
+def resolve_db_path(slot: Optional[int] = None) -> Path:
+    if slot is None:
+        slot = request_save_slot()
+    return data_directory() / f"routier_slot{slot}.db"
+
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 
 
 def connect():
-    if not DB_PATH.exists():
-        raise FileNotFoundError(f"Database not found: {DB_PATH}")
-    conn = sqlite3.connect(f"file:{DB_PATH.as_posix()}?mode=ro", uri=True)
+    db_path = resolve_db_path()
+    if not db_path.exists():
+        raise FileNotFoundError(f"Database not found: {db_path}")
+    conn = sqlite3.connect(f"file:{db_path.as_posix()}?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -313,27 +360,38 @@ def index():
 
 @app.get("/api/status")
 def status():
+    slot = request_save_slot()
+    db_path = resolve_db_path(slot)
     try:
         with connect() as conn:
             row = conn.execute(
                 "SELECT id, captured_at, game_day, game_time FROM snapshots ORDER BY id DESC LIMIT 1"
             ).fetchone()
+            globals_row = None
+            if row is not None:
+                globals_row = conn.execute(
+                    """
+                    SELECT goods_soft_cap, positive_price_mult, negative_price_mult, updated_at
+                    FROM market_globals WHERE id = 1
+                    """
+                ).fetchone()
         if row is None:
-            return jsonify({"ok": True, "database": str(DB_PATH), "latest": None, "market_globals": None})
-        globals_row = conn.execute(
-            """
-            SELECT goods_soft_cap, positive_price_mult, negative_price_mult, updated_at
-            FROM market_globals WHERE id = 1
-            """
-        ).fetchone()
+            return jsonify({
+                "ok": True,
+                "database": str(db_path),
+                "save_slot": slot,
+                "latest": None,
+                "market_globals": None,
+            })
         return jsonify({
             "ok": True,
-            "database": str(DB_PATH),
+            "database": str(db_path),
+            "save_slot": slot,
             "latest": dict(row),
             "market_globals": dict(globals_row) if globals_row else None,
         })
     except FileNotFoundError as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 404
+        return jsonify({"ok": False, "error": str(exc), "save_slot": slot}), 404
 
 
 @app.get("/api/ports")
@@ -954,5 +1012,5 @@ def simulate_round_trip_api():
 if __name__ == "__main__":
     host = CFG.get("host", "127.0.0.1")
     port = int(CFG.get("port", 8765))
-    print(f"Routier web UI — {DB_PATH}")
+    print(f"Routier web UI — data dir: {data_directory()} (routier_slotN.db)")
     app.run(host=host, port=port, debug=False)

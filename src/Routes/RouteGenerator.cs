@@ -79,6 +79,11 @@ namespace Routier
             return minted;
         }
 
+        internal static void ReloadRunSeed()
+        {
+            _runSeed = null;
+        }
+
         internal static void Generate(long snapshotId, GenerationConfig cfg)
         {
             if (PrefabsDirectory.instance == null || Port.ports == null)
@@ -118,11 +123,15 @@ namespace Routier
                 if (!views.TryGetValue(hub.portIndex, out var hubView))
                     continue;
 
-                var repLevel = PlayerReputation.GetRepLevel(hubView.Region);
+                var playerRep = PlayerReputation.GetRepLevel(hubView.Region);
                 var rng = new System.Random(GetRunSeed() + GameState.day * 1000 + hub.portIndex);
 
-                var local = GenerateForHub(hub, hubView, views, portsByIndex, goods, cfg, rng, repLevel, "local", false, snapshotId);
-                var regional = GenerateForHub(hub, hubView, views, portsByIndex, goods, cfg, rng, repLevel, "regional", true, snapshotId);
+                var local = GenerateForHub(
+                    hub, hubView, views, portsByIndex, goods, cfg, rng, playerRep,
+                    "local", false, snapshotId);
+                var regional = GenerateForHub(
+                    hub, hubView, views, portsByIndex, goods, cfg, rng, playerRep,
+                    "regional", true, snapshotId);
                 rows.AddRange(local);
                 rows.AddRange(regional);
             }
@@ -152,60 +161,84 @@ namespace Routier
             List<GoodDef> goods,
             GenerationConfig cfg,
             System.Random rng,
-            int repLevel,
+            int playerRepLevel,
             string kind,
             bool crossRegion,
             long snapshotId)
         {
-            var pool = BuildPool(hub, portsByIndex, crossRegion);
-            var wanted = crossRegion ? cfg.RegionalCount : cfg.LocalCount;
+            var pool = BuildPool(hub, portsByIndex, crossRegion, playerRepLevel);
+            var slotCount = crossRegion ? cfg.RegionalCount : cfg.LocalCount;
             var result = new List<GeneratedRouteRow>();
-            if (pool.Count < cfg.HopsMin - 1)
+            if (pool.Count < 2)
                 return result;
 
-            var cut = Mathf.Clamp(0.35f - 0.05f * repLevel, 0.10f, 0.35f);
+            var cut = Mathf.Clamp(0.35f - 0.05f * playerRepLevel, 0.10f, 0.35f);
             var seen = new HashSet<string>();
-            var candidates = new List<GeneratedRouteRow>();
 
-            for (var attempt = 0; attempt < cfg.SamplesPerList; attempt++)
+            for (var slot = 0; slot < slotCount; slot++)
             {
-                var hops = rng.Next(cfg.HopsMin, cfg.HopsMax + 1);
-                var routeViews = SampleRoute(hub, hubView, pool, views, hops, rng, crossRegion);
-                if (routeViews == null)
+                var routeTier = crossRegion
+                    ? RouteTierTable.RollRegionalTier(rng)
+                    : RouteTierTable.RollLocalTier(rng);
+                var limits = RouteTierTable.ForRouteTier(routeTier, cfg);
+                if (pool.Count < limits.HopsMin - 1)
                     continue;
 
-                var sig = RouteSignature(routeViews);
-                if (!seen.Add(sig))
-                    continue;
+                GeneratedRouteRow best = null;
 
-                var budget = rng.Next(cfg.BudgetMin, cfg.BudgetMax + 1);
-                RoutePlan plan;
-                try
+                for (var attempt = 0; attempt < cfg.SamplesPerList; attempt++)
                 {
-                    plan = RouteOptimizer.SequentialRoutePlan(routeViews, goods, budget);
-                }
-                catch (Exception ex)
-                {
-                    Plugin.Log.LogWarning($"Routier route plan failed: {ex.Message}");
-                    continue;
+                    var hops = limits.HopsMin == limits.HopsMax
+                        ? limits.HopsMin
+                        : rng.Next(limits.HopsMin, limits.HopsMax + 1);
+                    var routeViews = SampleRoute(hub, hubView, pool, views, hops, rng, crossRegion);
+                    if (routeViews == null)
+                        continue;
+
+                    var sig = RouteSignature(routeViews);
+                    if (!seen.Add(sig))
+                        continue;
+
+                    var budget = limits.SampleBudget(rng, cfg);
+                    if (budget <= 0)
+                        continue;
+
+                    RoutePlan plan;
+                    try
+                    {
+                        plan = RouteOptimizer.SequentialRoutePlan(
+                            routeViews, goods, budget, limits.MaxWeightLb, limits.MaxVolumeCuft);
+                    }
+                    catch (Exception ex)
+                    {
+                        Plugin.Log.LogWarning($"Routier route plan failed: {ex.Message}");
+                        continue;
+                    }
+
+                    if (plan.BudgetSpent <= 0 || plan.TotalProfit <= 0)
+                        continue;
+                    if (limits.MaxWeightLb.HasValue && plan.WeightUsed > limits.MaxWeightLb.Value + 0.01f)
+                        continue;
+                    if (limits.MaxVolumeCuft.HasValue && plan.VolumeUsed > limits.MaxVolumeCuft.Value + 0.01f)
+                        continue;
+
+                    var roi = (float)plan.TotalProfit / budget;
+                    if (roi < cfg.RoiFloor)
+                        continue;
+
+                    var row = BuildRow(
+                        plan, hub, hubView, kind, budget, roi, cut, playerRepLevel, routeTier, snapshotId);
+                    if (best == null || row.Profit > best.Profit)
+                        best = row;
                 }
 
-                if (plan.BudgetSpent <= 0 || plan.TotalProfit <= 0)
-                    continue;
-                var capital = budget;
-                var roi = (float)plan.TotalProfit / capital;
-                if (roi < cfg.RoiFloor)
+                if (best == null)
                     continue;
 
-                candidates.Add(BuildRow(plan, hub, hubView, kind, budget, roi, cut, repLevel, snapshotId));
+                result.Add(best);
+                DailyRouteCatalog.Add(best.Offer);
             }
 
-            candidates.Sort((a, b) => b.Profit.CompareTo(a.Profit));
-            for (var i = 0; i < candidates.Count && result.Count < wanted; i++)
-            {
-                result.Add(candidates[i]);
-                DailyRouteCatalog.Add(candidates[i].Offer);
-            }
             return result;
         }
 
@@ -217,7 +250,8 @@ namespace Routier
             int budget,
             float roi,
             float cut,
-            int repLevel,
+            int playerRepLevel,
+            int routeTier,
             long snapshotId)
         {
             var displayProfit = 0;
@@ -240,9 +274,10 @@ namespace Routier
                 DisplayProfit = displayProfit,
                 Roi = roi,
                 Price = displayPrice,
-                RepLevel = repLevel,
+                RepLevel = playerRepLevel,
+                RouteTier = routeTier,
                 Tier = Tier(roi),
-                TotalDistanceKm = RouteParchmentBuilder.ComputeRouteDistanceKm(plan),
+                TotalDistanceNm = PortMapDistance.RouteNm(plan.Route),
             };
             offer.Pages = RouteParchmentBuilder.BuildPageModels(offer);
 
@@ -264,7 +299,7 @@ namespace Routier
                 DisplayProfit = displayProfit,
                 Roi = roi,
                 Price = displayPrice,
-                RepLevel = repLevel,
+                RepLevel = playerRepLevel,
                 Tier = Tier(roi),
                 Summary = BuildSummary(plan, hubView.Region),
                 Offer = offer,
@@ -333,7 +368,11 @@ namespace Routier
                 $"{string.Join(", ", legs.ToArray())} | profit {profitD}";
         }
 
-        private static List<int> BuildPool(Port hub, Dictionary<int, Port> portsByIndex, bool crossRegion)
+        private static List<int> BuildPool(
+            Port hub,
+            Dictionary<int, Port> portsByIndex,
+            bool crossRegion,
+            int playerRepLevel)
         {
             var pool = new List<int>();
             if (crossRegion)
@@ -342,6 +381,8 @@ namespace Routier
                 foreach (var kv in portsByIndex)
                 {
                     if (kv.Key == hub.portIndex)
+                        continue;
+                    if (!RouteIslandAccess.IsPortAllowed(kv.Value.GetPortName(), playerRepLevel))
                         continue;
                     if (Mission.GetDistance(hub, kv.Value) <= maxDist)
                         pool.Add(kv.Key);
@@ -352,6 +393,8 @@ namespace Routier
                 foreach (var kv in portsByIndex)
                 {
                     if (kv.Key == hub.portIndex)
+                        continue;
+                    if (!RouteIslandAccess.IsPortAllowed(kv.Value.GetPortName(), playerRepLevel))
                         continue;
                     if ((int)kv.Value.region == (int)hub.region)
                         pool.Add(kv.Key);
@@ -489,7 +532,7 @@ namespace Routier
                     lastHub = row.HubPortIndex;
                     var cutPct = Mathf.RoundToInt(Mathf.Clamp(0.35f - 0.05f * row.RepLevel, 0.10f, 0.35f) * 100f);
                     var cur = PlayerGold.GetCurrencyName(row.HubRegion);
-                    sb.AppendLine($"[{row.HubPortName}] region {row.HubRegion}, rep L{row.RepLevel}, agent cut {cutPct}% ({cur})");
+                    sb.AppendLine($"[{row.HubPortName}] region {row.HubRegion}, board tier L{row.Offer?.RouteTier ?? 0}, agent cut {cutPct}% ({cur})");
                 }
                 var capitalD = RouteDisplay.RawToDisplay(row.CapitalInitial, row.HubRegion);
                 sb.AppendLine(

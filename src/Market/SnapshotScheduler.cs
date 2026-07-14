@@ -28,6 +28,22 @@ namespace Routier
             _genConfig = config;
         }
 
+        internal static void ResetForSave()
+        {
+            var scheduler = Plugin.Instance != null
+                ? Plugin.Instance.GetComponent<SnapshotScheduler>()
+                : null;
+            scheduler?.ResetSessionState();
+        }
+
+        internal void ResetSessionState()
+        {
+            _lastCapturedSlot = -1;
+            _lastGeneratedDay = -1;
+            _startupAligned = false;
+            _startupTimer = 0f;
+        }
+
         private void Update()
         {
             if (_startupTimer < _startupDelay)
@@ -90,6 +106,7 @@ namespace Routier
             catch (Exception ex)
             {
                 Plugin.Log.LogError($"Routier route generation failed: {ex}");
+                _lastGeneratedDay = GameState.day;
             }
         }
 

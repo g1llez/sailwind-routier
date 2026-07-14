@@ -16,7 +16,7 @@ namespace Routier
     private static ParchmentSummaryPage BuildSummaryPage(RouteOffer offer)
     {
       var currency = PlayerGold.GetCurrencyName(offer.HubRegion);
-      var miles = Mathf.RoundToInt(DistanceMiles(offer.TotalDistanceKm));
+      var nm = Mathf.RoundToInt(offer.TotalDistanceNm);
       var capitalD = RouteDisplay.RawToDisplay(offer.CapitalInitial, offer.HubRegion);
       var profitD = offer.DisplayProfit > 0
         ? offer.DisplayProfit
@@ -37,14 +37,14 @@ namespace Routier
       return new ParchmentSummaryPage
       {
         Title = "TRADE ROUTE GUIDE",
-        HubName = offer.Plan.RouteNames[0],
+        HubName = offer.Plan.RouteNames[0] + " D" + offer.GameDay,
         Currency = currency,
         GrandTotalLine = grandTotalLine,
         RouteLines = WrapRoute(offer.Plan.RouteNames, 36).ToArray(),
         Stats = new List<SummaryStatRow>
         {
           new SummaryStatRow { Label = "hops", Value = offer.Plan.Route.Count.ToString() },
-          new SummaryStatRow { Label = "distance", Value = "~" + miles + " mi" },
+          new SummaryStatRow { Label = "distance", Value = "~" + nm + " nm" },
           new SummaryStatRow { Label = "capital", Value = capitalD.ToString() },
           new SummaryStatRow { Label = "est. profit", Value = profitD.ToString() },
           new SummaryStatRow { Label = "ROI", Value = Mathf.RoundToInt(offer.Roi * 100f) + "%" },
@@ -62,7 +62,7 @@ namespace Routier
       var portIndex = route[stopIndex];
       var portName = names[stopIndex];
       var nextName = stopIndex < names.Count - 1 ? names[stopIndex + 1] : "(end)";
-      var legMiles = Mathf.RoundToInt(DistanceMiles(LegDistanceKm(offer.Plan, stopIndex)));
+      var legNm = Mathf.RoundToInt(PortMapDistance.LegNm(offer.Plan, stopIndex));
 
       var sells = CollectSellRows(offer.Plan, portIndex, offer.HubRegion);
       var buys = CollectBuyRows(offer.Plan, portIndex, offer.HubRegion);
@@ -86,7 +86,7 @@ namespace Routier
       if (!isLastStop)
       {
         var cargo = ComputeLegCargo(offer.Plan, stopIndex);
-        legStats.Add(new SummaryStatRow { Label = "distance", Value = "~" + legMiles + " mi" });
+        legStats.Add(new SummaryStatRow { Label = "distance", Value = "~" + legNm + " nm" });
         legStats.Add(new SummaryStatRow { Label = "cargo", Value = cargo.units + " units" });
         legStats.Add(new SummaryStatRow { Label = "weight", Value = Mathf.RoundToInt(cargo.weightLb) + " lb" });
         legStats.Add(new SummaryStatRow { Label = "volume", Value = Mathf.RoundToInt(cargo.volumeCuft) + " ft³" });
@@ -257,42 +257,6 @@ namespace Routier
         if (route[i] == portIndex)
           return i;
       return -1;
-    }
-
-    private static float LegDistanceKm(RoutePlan plan, int stopIndex)
-    {
-      if (Port.ports == null || stopIndex >= plan.Route.Count - 1)
-        return 0f;
-      var a = Port.ports[plan.Route[stopIndex]];
-      var b = Port.ports[plan.Route[stopIndex + 1]];
-      if (a == null || b == null)
-        return 0f;
-      return Mission.GetDistance(a, b);
-    }
-
-    internal static float ComputeRouteDistanceKm(RoutePlan plan)
-    {
-      if (Port.ports == null || plan.Route.Count < 2)
-        return 0f;
-      var total = 0f;
-      for (var i = 0; i < plan.Route.Count - 1; i++)
-      {
-        var a = Port.ports[plan.Route[i]];
-        var b = Port.ports[plan.Route[i + 1]];
-        if (a == null || b == null)
-          continue;
-        total += Mission.GetDistance(a, b);
-      }
-      return total;
-    }
-
-    internal static float DistanceMiles(float km)
-    {
-      if (Sun.sun == null)
-        return km;
-      var units = km * 100f;
-      var scale = 0.514444f / Sun.sun.initialTimescale;
-      return units / scale;
     }
   }
 }

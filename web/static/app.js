@@ -18,6 +18,7 @@ const FILTER_STORAGE_KEY = "routier.portFilter";
 const EXPANDED_ARCHS_KEY = "routier.expandedArchs";
 const REFRESH_ENABLED_KEY = "routier.autoRefresh";
 const REFRESH_INTERVAL_KEY = "routier.refreshInterval";
+const SLOT_STORAGE_KEY = "routier.saveSlot";
 const CURRENCY_STORAGE_KEY = "routier.currency";
 const PORT_STORAGE_KEY = "routier.port";
 const GOOD_STORAGE_KEY = "routier.good";
@@ -25,6 +26,7 @@ const currencyNames = ["Al'Ankh Lions", "Emerald Dragons", "Aestrin Crowns", "Go
 const currencyShort = ["Lions", "Dragons", "Crowns", "Gold Lions"];
 
 let selectedCurrency = 0;
+let selectedSaveSlot = 0;
 let marketCurrency = null;
 let lastGoodsData = null;
 let lastCompareData = null;
@@ -36,6 +38,21 @@ function isMultiArchipelago() {
     if (visiblePortIds.has(port.port_index)) regions.add(port.region);
   }
   return regions.size > 1;
+}
+
+function loadSelectedSaveSlot() {
+  try {
+    const raw = localStorage.getItem(SLOT_STORAGE_KEY);
+    if (raw == null) return 0;
+    const value = Number(raw);
+    return value >= 0 && value <= 5 ? value : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function saveSelectedSaveSlot() {
+  localStorage.setItem(SLOT_STORAGE_KEY, String(selectedSaveSlot));
 }
 
 function loadSelectedCurrency() {
@@ -311,7 +328,8 @@ function populateCurrencySelect() {
 }
 
 async function fetchJson(url) {
-  const response = await fetch(url);
+  const sep = url.includes("?") ? "&" : "?";
+  const response = await fetch(`${url}${sep}slot=${selectedSaveSlot}`);
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     throw new Error(body.error || response.statusText);
@@ -410,7 +428,8 @@ function formatChartLabel(point) {
 function updateStatusText(status) {
   const statusEl = document.getElementById("status");
   if (!status.latest) {
-    statusEl.textContent = `No snapshots yet — play Sailwind with Routier loaded. DB: ${status.database}`;
+    const slotLabel = status.save_slot != null ? `slot ${status.save_slot}` : "selected slot";
+    statusEl.textContent = `No snapshots yet for ${slotLabel} — play Sailwind with Routier loaded.`;
     return;
   }
   const refreshed = lastRefreshedAt ? formatRelativeTime(lastRefreshedAt) : "just now";
@@ -1532,6 +1551,16 @@ function bindUi() {
   autoRefresh.addEventListener("change", scheduleAutoRefresh);
   refreshInterval.addEventListener("change", scheduleAutoRefresh);
   document.getElementById("refresh-now").addEventListener("click", () => refreshAll(false));
+
+  const saveSlotSelect = document.getElementById("save-slot-select");
+  selectedSaveSlot = loadSelectedSaveSlot();
+  saveSlotSelect.value = String(selectedSaveSlot);
+  saveSlotSelect.addEventListener("change", async () => {
+    selectedSaveSlot = Number(saveSlotSelect.value);
+    saveSelectedSaveSlot();
+    lastSnapshotId = null;
+    await refreshAll(false);
+  });
 
   scheduleAutoRefresh();
   bindSimUi();

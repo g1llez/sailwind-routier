@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS port_prices (
     sell_raw INTEGER NOT NULL,
     supply REAL NOT NULL,
     available INTEGER NOT NULL,
+    buy_qty INTEGER,
     FOREIGN KEY (snapshot_id) REFERENCES snapshots(id)
 );
 

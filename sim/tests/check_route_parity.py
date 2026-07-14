@@ -8,9 +8,12 @@ derives base_value from the snapshot quote while C# uses the exact item.value;
 large deviations mean the port drifted from the reference and must be investigated.
 
 Run after playing in-game so `generated_routes` is populated:
-    python check_route_parity.py [path/to/routier.db]
+    python check_route_parity.py --slot 0
+    python check_route_parity.py path/to/routier_slot2.db
 """
 
+import argparse
+import os
 import sqlite3
 import sys
 from pathlib import Path
@@ -23,10 +26,24 @@ for path in (str(SIM_DIR), str(WEB_DIR)):
 
 from route_planner import plan_route, plan_to_dict  # noqa: E402
 
-DEFAULT_DB = Path(
-    r"C:/Program Files (x86)/Steam/steamapps/common/Sailwind"
-    r"/BepInEx/plugins/Routier/data/routier.db"
+DEFAULT_GAME_DIR = Path(
+    os.environ.get(
+        "SAILWIND_DIR",
+        r"C:\Program Files (x86)\Steam\steamapps\common\Sailwind",
+    )
 )
+DEFAULT_DATA_DIR = Path(
+    os.environ.get(
+        "ROUTIER_DATA_DIR",
+        str(DEFAULT_GAME_DIR / "BepInEx" / "plugins" / "Routier" / "data"),
+    )
+)
+
+
+def resolve_db_path(args: argparse.Namespace) -> Path:
+    if args.database:
+        return Path(args.database)
+    return DEFAULT_DATA_DIR / f"routier_slot{args.slot}.db"
 
 
 def main(db_path: Path) -> int:
@@ -42,6 +59,7 @@ def main(db_path: Path) -> int:
     ).fetchone()
     if not has_table:
         print("generated_routes table not found — run the updated mod in-game first.")
+        conn.close()
         return 0
 
     rows = conn.execute(
@@ -49,6 +67,7 @@ def main(db_path: Path) -> int:
     ).fetchall()
     if not rows:
         print("no rows in generated_routes yet — run the mod in-game first.")
+        conn.close()
         return 0
 
     checked = 0
@@ -58,7 +77,8 @@ def main(db_path: Path) -> int:
     within = {0.005: 0, 0.01: 0, 0.02: 0}
     failures = []
 
-    for r in rows:
+    for row in rows:
+        r = dict(row)
         route = [int(x) for x in r["route_csv"].split(",") if x != ""]
         if len(route) < 2:
             continue
@@ -84,7 +104,7 @@ def main(db_path: Path) -> int:
                 within[thr] += 1
         if profit_pct > worst_profit_pct:
             worst_profit_pct = profit_pct
-            worst_row = (r, py_profit, py_spent)
+            worst_row = (r, py_profit, py_capital, cs_capital)
 
         if len(pd["deals"]) != _count_summary_deals(r["summary"]):
             mismatched_deals += 1
@@ -97,7 +117,7 @@ def main(db_path: Path) -> int:
         )
         print(f"  worst profit deviation: {worst_profit_pct * 100:.2f}%")
         if worst_row is not None:
-            r, py_profit, py_spent = worst_row
+            r, py_profit, py_capital, cs_capital = worst_row
             print(
                 f"    route #{r['id']} {r['route_names']} capital {r.get('capital_initial', r['budget'])}: "
                 f"C# profit {r['profit']} / Py {py_profit}, "
@@ -111,6 +131,7 @@ def main(db_path: Path) -> int:
 
     ok = checked > 0 and worst_profit_pct <= 0.02 and not failures
     print("PARITY OK" if ok else "PARITY: review deviations above")
+    conn.close()
     return 0 if ok else 1
 
 
@@ -121,5 +142,8 @@ def _count_summary_deals(summary) -> int:
 
 
 if __name__ == "__main__":
-    path = Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_DB
-    raise SystemExit(main(path))
+    parser = argparse.ArgumentParser(description="Compare C# generated routes with Python planner")
+    parser.add_argument("database", nargs="?", help="Path to routier_slotN.db (overrides --slot)")
+    parser.add_argument("--slot", type=int, default=0, help="Sailwind save slot index 0-5")
+    args = parser.parse_args()
+    raise SystemExit(main(resolve_db_path(args)))

@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS port_prices (
     sell_raw INTEGER NOT NULL,
     supply REAL NOT NULL,
     available INTEGER NOT NULL,
+    buy_qty INTEGER,
     FOREIGN KEY (snapshot_id) REFERENCES snapshots(id)
 );
 
@@ -135,6 +136,7 @@ CREATE INDEX IF NOT EXISTS idx_generated_routes_snapshot ON generated_routes(sna
 ";
                 command.ExecuteNonQuery();
                 EnsureColumn(connection, "snapshots", "game_time", "REAL");
+                EnsureColumn(connection, "port_prices", "buy_qty", "INTEGER");
                 EnsureColumn(connection, "generated_routes", "capital_initial", "INTEGER");
                 EnsureColumn(connection, "generated_routes", "gross_purchases", "INTEGER");
                 EnsureColumn(connection, "goods_catalog", "base_value", "REAL");

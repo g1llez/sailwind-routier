@@ -14,9 +14,9 @@ namespace Routier
   [HarmonyPatch(typeof(SaveLoadManager), "LoadModData")]
   internal static class LoadModDataPatch
   {
-    private static void Prefix()
+    private static void Postfix()
     {
-      RouteParchmentRegistry.LoadFromGameState();
+      DatabaseSession.OnSaveLoaded();
     }
   }
 }

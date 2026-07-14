@@ -44,11 +44,12 @@ flowchart LR
 
 Each playthrough must own its market history; no cross-save snapshot bleed.
 
-- [ ] Resolve DB path from `SaveSlots.currentSlot` → `data/routier_slot{N}.db`
-- [ ] Re-open / swap DB on game load (`SaveLoadManager` post-load hook)
-- [ ] Handle legacy `routier.db` (log + ignore or one-time migration note)
-- [ ] Web dashboard: slot-aware `database_path` docs / env override
-- [ ] Parity script `check_route_parity.py`: accept slot suffix
+- [x] Resolve DB path from `SaveSlots.currentSlot` → `data/routier_slot{N}.db`
+- [x] Re-open / swap DB on game load (`SaveLoadManager` post-load hook)
+- [x] New game on a slot wipes Routier `modData` and deletes that slot's DB (fresh start)
+- [x] No migration from legacy `routier.db`
+- [x] Web dashboard: save-slot dropdown in header (`?slot=N`)
+- [x] Parity script `check_route_parity.py`: `--slot N`
 
 **Reference:** `SaveSlots.GetCurrentSavePath()` → `slot{N}.save`
 
@@ -68,14 +69,32 @@ Replace the flat **Canvas overlay** with a **3D book UI** like the in-game missi
 
 **Agent** — replace the cube; **parchment** — final manifest quality for 1.0.
 
-**Agent**
+**Agent (GRC)**
 
-- [ ] Hub presence at `PortDude.missionTable` — static figure or `QuestDude`-style
-  trigger (no custom rig v1)
-- [ ] Opens v0.7 book UI (single purchase flow)
-- [ ] `lookText` + short hook ("Route agent — today's manifests")
-- [ ] Desk / scroll prop (`GPButtonPortMissions`, `ShipyardDocuments` precedent)
-- [ ] Remove `PrimitiveType.Cube` from `HubKioskInstaller`
+- [x] Stall `market_stall (8)` + NPC + livre cliquable au quai GRC
+- [x] Placement via scène île (build index 1) + ancre anti floating-origin
+- [ ] Autres hubs (Dragon Cliffs, Fort Aestrin…) — poses à calibrer
+- [ ] Remove `PrimitiveType.Cube` fallback des hubs non-GRC
+- [ ] `lookText` / petit dialogue agent
+- [ ] v0.7 book UI (remplace Canvas) depuis le livre du comptoir
+
+**Bugs GRC — suivi**
+
+- [ ] **Kiosk trop bas / dans le sol** après partir et revenir à GRC. OK au load
+  save près du quai. **En observation** — noter load / départ / retour / FO
+  avant de corriger. `HubKioskInstaller.TryInstallGrc`.
+- [x] **Bake kiosk axes / pivot** — yaw source stall + `NormalizePivotToFeet` (root =
+  bottom-center des meshes, plus de −1 X fantôme). Offsets livre/NPC **provisoires**
+  — re-capturer avec SailwindHack.
+- [x] **Parchemin à l’achat** spawn au-dessus du livre / comptoir kiosk
+  (`RouteOffersUI.TryGetParchmentSpawn`).
+- [x] **UI offres** : prix à gauche sans currency (currency reste sous le titre).
+
+**Feature — accès îles par rep**
+
+- [x] Al’Ankh : Oasis + Mirage Mountain ≥ 3, Saffron Island ≥ 5
+  (`RouteIslandAccess` + filtre `RouteGenerator.BuildPool`).
+- [ ] Autres archipels (Emerald / Aestrin / Lagoon) : TBD.
 
 **Parchment (1.0 quality bar)**
 
@@ -101,6 +120,62 @@ Replace the flat **Canvas overlay** with a **3D book UI** like the in-game missi
 
 **1.0 delivers:** daily route guides at hub ports, save-bound market DB, book-style
 offer browser, real agent interactable, polished manifest parchment.
+
+### Routes — déblocage par niveau de réputation
+
+Les offres daily (et l'agent) doivent suivre la réputation **régionale** du hub
+(`PlayerReputation.GetRepLevel`) — progression alignée storyline / vanilla.
+
+| Rep level | Accès routes | Hops (local) | Capital max (budget route) | Poids max | Volume max |
+|-----------|--------------|--------------|----------------------------|-----------|------------|
+| **0** | **Aucun** — pas d'offres, agent indisponible ou message « revenez quand la région vous fait confiance » | — | — | — | — |
+| **1** | Local seulement | **3** (fixe) | **500** | **250 lb** | **10 ft³** |
+| **2** | Local | **3–4** | **1 000** | **500 lb** | **25 ft³** |
+| **3** | Local | **3–5** | **5 000** | **1 000 lb** | **40 ft³** |
+| **4** | Local **+ régional** | **3–5** | **15 000** | **4 000 lb** | **120 ft³** |
+| **5+** | Local + régional | 3–5 | **Max actuel** (config `BudgetMax`, typ. 30 000) | **Max actuel** (pas de plafond gen.) | **Max actuel** (pas de plafond gen.) |
+
+Capital = budget initial tiré au sort pour planifier la route (`BudgetMin`–`BudgetMax` dans
+`RouteGenerator` ; aujourd'hui 2 000–30 000 global). Poids / volume = contraintes
+passées à l'optimizer (`max_weight` / `max_volume` — déjà dans `sim/route_optimizer.py`
+et le planner web ; **pas encore** dans le générateur C# in-game).
+
+**Implémentation**
+
+- [x] `RouteGenerator.GenerateForHub` : sauter génération si `repLevel < 1`
+- [x] `HopsMin` / `HopsMax` dérivés du rep level (`RouteTierTable.cs`)
+- [x] `BudgetMax` plafonné par palier rep ; niveau 5+ = config BepInEx
+- [x] `SequentialRoutePlan(..., maxWeight, maxVolume)` — contraintes cargo par palier
+- [x] Rejeter routes dont le plan dépasse poids / volume du palier
+- [x] Niveau &lt; 4 : ne pas générer les offres `regional`
+- [x] UI agent : message si rep level 0
+- [ ] UI agent : expliquer le prochain palier (hops, capital, cargo, régional)
+- [ ] Parité sim / web si le planner doit refléter les mêmes gates
+- [x] **Accès îles par rep level** (Al’Ankh) — Oasis + Mirage Mountain ≥ 3,
+  Saffron Island ≥ 5 ; autres archipels TBD (`RouteIslandAccess`).
+
+**Référence actuelle :** `RouteGenerator.cs` utilise déjà `repLevel` pour le % agent
+(cut) mais génère local + regional à tous les niveaux avec budget global unique — à restreindre.
+
+**Comportement (v0.7.0 — tableau de manifests)**
+
+- **8h** : **5 local + 2 regional** slots par hub (`LocalCount` / `RegionalCount`).
+- Chaque slot = tier aléatoire (local 1–5, regional 4–5), contraintes via `RouteTierTable`.
+- Un slot peut rester **vide** si aucun plan valide (marché réaliste).
+- **UI** : tout le tableau visible ; manifests verrouillés **grisés** + **Rep L{n} required** en rouge.
+- **Achat** : `playerRep >= RequiredPlayerRep(offer)` ; montée de rep dans la journée débloque sans regen.
+- **Équilibre** : `src/Routes/RouteTierTable.cs` (`FixedTiers`, `Tier5*` constants).
+
+**Implémentation v2**
+
+- [x] Générer 5+2 ; tier aléatoire par slot
+- [x] Regional slots → tier 4–5
+- [x] UI grisé + rep requis en rouge
+- [x] Tier 5 : 50 000 / 10 000 lb / 500 ft³
+- [ ] Parité sim / web
+- [ ] UI : expliquer prochain palier rep (hors liste grisée)
+
+**Design doc :** `docs/STORYLINE.md` (progression archipel / mandats).
 
 ---
 
@@ -165,6 +240,38 @@ authorities.
 that evolve the player across archipelagos. Aligns with Discord poll (storyline > pure
 mechanics).
 
+**Design doc :** `docs/STORYLINE.md` (includes engagement loop: Stakes → Big Question →
+Head fake → Re-hook; ref [YouTube](https://www.youtube.com/watch?v=KyC8r-zitVE))
+
+### Main arc (proposed) — Treasure, Lucky & pirate mentor
+
+**Backstory:** two captains hunt the **same treasure** for years, working **against** each
+other after an old feud (the pirate wasn't kind to **Captain Lucky**).
+
+**Surface:** the pirate becomes the player's **mentor** — seems helpful; quests sometimes
+morally grey.
+
+**Escalation:** rumour that Lucky **found the treasure** → mentor gives "innocent" quests
+actually woven to **steal** it → finds Lucky, no chest → sinks Lucky's ship.
+
+**Twist:** the gold **is the boat** — all metal fittings are **gold, painted over**. The
+pirate didn't know.
+
+| Beat | Working title | Notes |
+|------|---------------|-------|
+| P-1 | The mentor | Meet pirate; first useful favour |
+| P-2 | Not very nice | Grey ask (e.g. **1.2** contraband) |
+| P-3 | Favours pile up | Soft theft / "I've been robbed" style |
+| P-4 | The rumour | Lucky found the treasure |
+| P-5 | Innocent quests | Camouflaged theft setup |
+| P-6 | Lucky found | No chest visible |
+| P-7 | The sinking | Pirate sinks Lucky's boat (no FPS combat) |
+| P-8 | Paint flakes off | **Reveal: boat metals = painted gold** → end |
+
+**Teaser (I-fin):** « Really… *Lucky*… after all that. »
+
+**Archived ideas:** agent-as-villain, rum/shipyard trap, testify-to-repair — superseded.
+
 ### Pillars
 
 1. **Recurring agent** — same company / character at hubs (or one archipelago lead per
@@ -175,6 +282,7 @@ mechanics).
    branches as `GameState.day` and regions advance.
 4. **Archipelago arc** — missions that pull the player between island groups (local →
    regional → cross-archipelago stakes).
+5. **No combat** — mentor betrayal, grey quests, sinking, painted-gold twist (Sailwind tone).
 
 ### Early design questions (TBD)
 
@@ -182,11 +290,17 @@ mechanics).
 - [ ] Mission data: JSON mod content vs. DB-driven vs. hybrid?
 - [ ] Failure / expiry: do story missions penalize like vanilla cargo missions?
 - [ ] Integration with 1.1 charter (story rewards = charter discounts?)
+- [ ] Soft-dep on Random Encounter if used for chase/sinking beat?
+- [ ] Pirate mentor name?
+- [ ] How does the pirate sink Lucky's boat without combat?
+- [ ] Salvage painted-gold fittings after P-7 — playable?
+- [ ] Aftermath vs mentor (confront / flee / share gold with Lucky)?
 
 ### Out of scope for 2.0 v1
 
 - Full voice acting, cinematics, new 3D character models
 - Replacing vanilla mission system entirely
+- Combat / boarding fights with the pirate
 
 ---
 

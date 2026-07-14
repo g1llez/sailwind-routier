@@ -10,6 +10,9 @@ profitable trade routes per hub port each day, and sells them as portable parchm
 guides through a route agent at the port. A companion web dashboard reads the same
 database for market lookup, charts, and a manual route planner/simulator.
 
+Current development line: **0.8.x — real agent and parchment polish**. See
+[`TODO.md`](TODO.md) for the path to 1.0.
+
 ## Features
 
 - **Market snapshots** — trade-post buy/sell prices, supply, currency cross-rates, and
@@ -29,7 +32,7 @@ database for market lookup, charts, and a manual route planner/simulator.
 
 ## Mod
 
-- Database: `BepInEx/plugins/Routier/data/routier.db`
+- Database: `BepInEx/plugins/Routier/data/routier_slot{N}.db` (one file per Sailwind save slot, 0–5)
 - Route generation and the kiosk UI only activate at hub ports (`Port.hubPort`)
 
 ### Build / install
@@ -38,22 +41,28 @@ database for market lookup, charts, and a manual route planner/simulator.
 .\build.ps1
 ```
 
-By default it targets `C:\Program Files (x86)\Steam\steamapps\common\Sailwind`; pass
-`-GameDir` if your install is elsewhere:
+By default it targets Steam's standard
+`%ProgramFiles(x86)%\Steam\steamapps\common\Sailwind` folder. Pass `-GameDir`, or set
+the reusable `SAILWIND_DIR` environment variable, if your install is elsewhere:
 
 ```powershell
 .\build.ps1 -GameDir "D:\Games\Sailwind"
+$env:SAILWIND_DIR = "D:\Games\Sailwind"
+.\build.ps1
 ```
 
-Config (`BepInEx/config/gaucl.routier.cfg`), generated on first run:
+Config (`BepInEx/config/g1llez.routier.cfg`), generated on first run:
+
+> Pre-0.8.5 development builds used `gaucl.routier.cfg` or `gillez.routier.cfg`;
+> rename that file to `g1llez.routier.cfg` if you want to retain those settings.
 
 | Section | Key | Default | Notes |
 |---|---|---|---|
 | Capture | `IntervalGameHours` | `1` | In-game hours between market snapshots |
-| Storage | `DatabasePath` | *(empty)* | Override for `routier.db` location |
+| Storage | `DatabasePath` | *(empty)* | Data directory, or legacy single `.db` override |
 | Routes | `Enabled` | `true` | Generate + sell daily route guides |
 | Routes | `GenerationHour` | `8` | In-game hour routes are (re)generated |
-| Routes | `LocalCount` / `RegionalCount` | `4` / `2` | Offers per hub, same-region vs. cross-region |
+| Routes | `LocalCount` / `RegionalCount` | `5` / `2` | Offers per hub, same-region vs. cross-region |
 | Routes | `RoiFloor` | `0.20` | Minimum ROI for an offer to be kept |
 | Routes | `BudgetMin` / `BudgetMax` | `2000` / `30000` | Random capital budget range used to plan a route |
 | Routes | `HopsMin` / `HopsMax` | `3` / `5` | Ports per route, including the hub |
@@ -69,7 +78,9 @@ python server.py
 
 Open http://127.0.0.1:8765
 
-Edit `web/config.json` if your `routier.db` path or port differs.
+The dashboard uses `ROUTIER_DATA_DIR`, then `SAILWIND_DIR`, then `web/config.json`
+to locate Routier's data. Use the **Save slot** dropdown in the dashboard header to
+match the Sailwind save you are playing (`SaveSlots.currentSlot`, 0–5).
 
 Tabs: market lookup (prices/supply per port + history chart), currency & reputation,
 **Route** planner (build/score a route against live snapshot data), and **Simulator**
@@ -101,7 +112,10 @@ Routier/
 ```
 
 See `sim/README.md` for the offline market simulator and `TODO.md` for the roadmap.
+Asset-inspection utilities under `test/` require
+`pip install -r test/requirements.txt` and honor `SAILWIND_DIR`.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE). Third-party attribution is listed in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

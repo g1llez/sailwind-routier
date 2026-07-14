@@ -137,12 +137,27 @@ namespace Routier
             float buyPurchaseLimit,
             Dictionary<int, float> sellSupplies,
             int budget,
-            int maxQty)
+            int maxQty,
+            float? freeWeightLb,
+            float? freeVolumeCuft)
         {
+            var qtyCap = maxQty;
+            if (freeWeightLb.HasValue && good.WeightLb > 0f)
+                qtyCap = System.Math.Min(qtyCap, (int)(freeWeightLb.Value / good.WeightLb));
+            if (freeVolumeCuft.HasValue && good.VolumeCuft > 0f)
+                qtyCap = System.Math.Min(qtyCap, (int)(freeVolumeCuft.Value / good.VolumeCuft));
+            if (qtyCap <= 0)
+                return null;
+
             RouteDeal best = null;
 
-            for (var qty = 1; qty <= maxQty; qty++)
+            for (var qty = 1; qty <= qtyCap; qty++)
             {
+                if (freeWeightLb.HasValue && good.WeightLb > 0f && good.WeightLb * qty > freeWeightLb.Value)
+                    break;
+                if (freeVolumeCuft.HasValue && good.VolumeCuft > 0f && good.VolumeCuft * qty > freeVolumeCuft.Value)
+                    break;
+
                 var buySim = RouteSim.SimulateBuy(supplyBuy, buyPurchaseLimit, qty, good.Index);
                 if (buySim.QuantityBought < qty)
                     continue;
@@ -194,7 +209,9 @@ namespace Routier
         private static int SellAtPort(
             int portIndex,
             List<OnBoardBatch> batches,
-            Dictionary<long, float> workingSupplies)
+            Dictionary<long, float> workingSupplies,
+            ref float onBoardWeight,
+            ref float onBoardVolume)
         {
             var revenue = 0;
             foreach (var batch in batches)
@@ -211,8 +228,11 @@ namespace Routier
                     if (sim.QuantitySold <= 0)
                         continue;
                     revenue += sim.TotalRevenue;
-                    batch.QtyRemaining -= sim.QuantitySold;
-                    leg.Quantity = sim.QuantitySold;
+                    var soldQty = sim.QuantitySold;
+                    onBoardWeight = UnityEngine.Mathf.Max(0f, onBoardWeight - batch.WeightLb * soldQty);
+                    onBoardVolume = UnityEngine.Mathf.Max(0f, onBoardVolume - batch.VolumeCuft * soldQty);
+                    batch.QtyRemaining -= soldQty;
+                    leg.Quantity = soldQty;
                     leg.UnitPrices = sim.UnitPrices;
                     leg.TotalRevenue = sim.TotalRevenue;
                     workingSupplies[Key(portIndex, g)] = sim.SupplyEnd;
@@ -227,12 +247,19 @@ namespace Routier
             IList<GoodDef> goods,
             Dictionary<long, float> workingSupplies,
             int cash,
+            float onBoardWeight,
+            float? maxWeight,
+            float onBoardVolume,
+            float? maxVolume,
             HashSet<int> onBoardGoods)
         {
             var buyPort = route[buyStop];
             var sellPorts = new List<(int, string)>();
             for (var i = buyStop + 1; i < route.Count; i++)
                 sellPorts.Add((route[i].Index, route[i].Name));
+
+            float? freeWeight = maxWeight.HasValue ? maxWeight.Value - onBoardWeight : (float?)null;
+            float? freeVolume = maxVolume.HasValue ? maxVolume.Value - onBoardVolume : (float?)null;
 
             RouteDeal best = null;
             foreach (var good in goods)
@@ -258,7 +285,9 @@ namespace Routier
                     buyPort.SupplyPurchaseLimit,
                     sellSupplies,
                     cash,
-                    maxQty);
+                    maxQty,
+                    freeWeight,
+                    freeVolume);
                 if (deal != null && (best == null || deal.Profit > best.Profit))
                     best = deal;
             }
@@ -269,7 +298,9 @@ namespace Routier
         internal static RoutePlan SequentialRoutePlan(
             IList<PortView> route,
             IList<GoodDef> goods,
-            int budget)
+            int budget,
+            float? maxWeight = null,
+            float? maxVolume = null)
         {
             var workingSupplies = new Dictionary<long, float>();
             var limits = new Dictionary<int, float>();
@@ -281,13 +312,17 @@ namespace Routier
             }
 
             var cash = budget;
+            var onBoardWeight = 0f;
+            var onBoardVolume = 0f;
+            var peakWeight = 0f;
+            var peakVolume = 0f;
             var batches = new List<OnBoardBatch>();
             var planDeals = new List<RouteDeal>();
 
             for (var stop = 0; stop < route.Count; stop++)
             {
                 var port = route[stop];
-                cash += SellAtPort(port.Index, batches, workingSupplies);
+                cash += SellAtPort(port.Index, batches, workingSupplies, ref onBoardWeight, ref onBoardVolume);
 
                 if (stop >= route.Count - 1)
                     continue;
@@ -299,7 +334,9 @@ namespace Routier
 
                 while (true)
                 {
-                    var deal = BestDealAtPort(stop, route, goods, workingSupplies, cash, onBoardGoods);
+                    var deal = BestDealAtPort(
+                        stop, route, goods, workingSupplies, cash,
+                        onBoardWeight, maxWeight, onBoardVolume, maxVolume, onBoardGoods);
                     if (deal == null)
                         break;
 
@@ -315,6 +352,13 @@ namespace Routier
                     var weightLb = deal.Quantity > 0 ? deal.WeightTotal / deal.Quantity : 0f;
                     var volumeCuft = deal.Quantity > 0 ? deal.VolumeTotal / deal.Quantity : 0f;
 
+                    onBoardWeight += deal.WeightTotal;
+                    onBoardVolume += deal.VolumeTotal;
+                    if (onBoardWeight > peakWeight)
+                        peakWeight = onBoardWeight;
+                    if (onBoardVolume > peakVolume)
+                        peakVolume = onBoardVolume;
+
                     batches.Add(new OnBoardBatch
                     {
                         Deal = deal,
@@ -329,10 +373,6 @@ namespace Routier
 
             // Legs were re-simulated during the walk; recompute totals from actuals
             // so the reported profit matches what really happened.
-            var peakWeight = 0f;
-            var peakVolume = 0f;
-            var runningWeight = 0f;
-            var runningVolume = 0f;
             foreach (var deal in planDeals)
             {
                 var sellTotal = 0;
@@ -340,10 +380,6 @@ namespace Routier
                     sellTotal += leg.TotalRevenue;
                 deal.SellTotal = sellTotal;
                 deal.Profit = sellTotal - deal.BuyTotal;
-                runningWeight += deal.WeightTotal;
-                runningVolume += deal.VolumeTotal;
-                if (runningWeight > peakWeight) peakWeight = runningWeight;
-                if (runningVolume > peakVolume) peakVolume = runningVolume;
             }
 
             var spent = 0;

@@ -1,14 +1,17 @@
 param(
-    [string]$GameDir = "C:\Program Files (x86)\Steam\steamapps\common\Sailwind"
+    [string]$GameDir = $env:SAILWIND_DIR
 )
 
 $ErrorActionPreference = "Stop"
 $Root = $PSScriptRoot
+if ([string]::IsNullOrWhiteSpace($GameDir)) {
+    $GameDir = Join-Path ${env:ProgramFiles(x86)} "Steam\steamapps\common\Sailwind"
+}
 $PluginDir = Join-Path $GameDir "BepInEx\plugins\Routier"
 $DataDir = Join-Path $PluginDir "data"
 $X64Dir = Join-Path $PluginDir "x64"
 
-dotnet build (Join-Path $Root "Routier.csproj") -c Release
+dotnet build (Join-Path $Root "Routier.csproj") -c Release -p:SailwindDir="$GameDir"
 
 New-Item -ItemType Directory -Force -Path $PluginDir, $DataDir, $X64Dir | Out-Null
 
@@ -37,8 +40,8 @@ if ($Interop) {
     Write-Warning "SQLite.Interop.dll not found"
 }
 
-python -c "import sys; sys.path.insert(0, r'$Root\web'); from pathlib import Path; from database import ensure_database; ensure_database(Path(r'$DataDir\routier.db'))"
+python -c "import sys; sys.path.insert(0, r'$Root\web'); from pathlib import Path; from database import ensure_database; ensure_database(Path(r'$DataDir\routier_slot0.db'))"
 
 Write-Host "Installed to $PluginDir"
-Write-Host "Database: $DataDir\routier.db (empty until in-game snapshots)"
+Write-Host "Per-save databases: $DataDir\routier_slot0.db … routier_slot5.db"
 Write-Host "Web UI:   python web\server.py  (from mod folder)"

@@ -7,18 +7,32 @@ x64/
 data/
 *.db
 *.db-*
+*.log
+*.zip
+*.7z
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+web/config.local.json
 
 # Python
 __pycache__/
 *.pyc
 .pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
 .venv/
 venv/
 env/
 
 # Editors / OS
+.vs/
 .vscode/
 .idea/
 *.suo
+*.user
 .DS_Store
 Thumbs.db

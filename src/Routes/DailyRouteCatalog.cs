@@ -18,8 +18,10 @@ namespace Routier
     public float Roi;
     public int Price;
     public int RepLevel;
+    /// <summary>Difficulty tier of this manifest (1–5). Used for access gating.</summary>
+    public int RouteTier;
     public string Tier;
-    public float TotalDistanceKm;
+    public float TotalDistanceNm;
     public ParchmentPage[] Pages;
   }
 
@@ -44,9 +46,16 @@ namespace Routier
       list.Add(offer);
     }
 
-    internal static IReadOnlyList<RouteOffer> GetHubOffers(int hubPortIndex)
+    internal static IReadOnlyList<RouteOffer> GetAllHubOffers(int hubPortIndex)
     {
-      return ByHub.TryGetValue(hubPortIndex, out var list) ? list : new List<RouteOffer>();
+      if (!ByHub.TryGetValue(hubPortIndex, out var list))
+        return new List<RouteOffer>();
+      return list;
+    }
+
+    internal static void RemoveHub(int hubPortIndex)
+    {
+      ByHub.Remove(hubPortIndex);
     }
   }
 }

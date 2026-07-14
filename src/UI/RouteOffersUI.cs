@@ -18,7 +18,7 @@ namespace Routier
     private const int PanelH = 760;
     private const int ListX = 30;
     private const int ListW = 430;
-    private const int ListStartY = 118;
+    private const int ListStartY = 104;
     private const int RowH = 84;
     private const int RowGap = 10;
     private const int DetailX = 520;
@@ -29,15 +29,19 @@ namespace Routier
     private static readonly Color InkColor = new Color(0.08f, 0.05f, 0.03f, 1f);
     private static readonly Color RowNormal = new Color(1f, 1f, 1f, 0.16f);
     private static readonly Color RowSelected = new Color(0.98f, 0.85f, 0.35f, 0.55f);
+    private static readonly Color RowLocked = new Color(0.45f, 0.45f, 0.45f, 0.22f);
+    private static readonly Color RowLockedSelected = new Color(0.55f, 0.5f, 0.45f, 0.35f);
+    private static readonly Color InkMuted = new Color(0.35f, 0.32f, 0.28f, 0.85f);
+    private static readonly Color InkLocked = new Color(0.5f, 0.48f, 0.44f, 0.9f);
 
     internal static RouteOffersUI Instance;
 
     private GameObject _root;
     private RectTransform _panelRect;
     private Text _titleText;
+    private Text _headerCurrency;
     private Text _detailTitle;
     private Text _detailRoute;
-    private Text _detailCurrency;
     private Text _detailStatsLabels;
     private Text _detailStatsValues;
     private Button _buyButton;
@@ -46,12 +50,15 @@ namespace Routier
     private readonly List<RowRefs> _rows = new List<RowRefs>();
     private IReadOnlyList<RouteOffer> _offers;
     private int _hubPortIndex;
+    private int _playerRepLevel;
+    private GenerationConfig _cfg;
     private int _selected = -1;
 
     private sealed class RowRefs
     {
       internal GameObject Go;
       internal Image Background;
+      internal bool Locked;
     }
 
     internal static void EnsureInstance()
@@ -64,15 +71,40 @@ namespace Routier
       Instance.Build();
     }
 
-    internal void Open(int hubPortIndex, string hubName, IReadOnlyList<RouteOffer> offers)
+    internal void Open(
+      int hubPortIndex,
+      string hubName,
+      IReadOnlyList<RouteOffer> offers,
+      int playerRepLevel,
+      GenerationConfig cfg)
     {
       _hubPortIndex = hubPortIndex;
       _offers = offers;
+      _playerRepLevel = playerRepLevel;
+      _cfg = cfg;
 
       _titleText.text = "<b>Route Agent — " + hubName + "</b>";
+      if (_offers != null && _offers.Count > 0)
+      {
+        var cur = PlayerGold.GetCurrencyName(_offers[0].HubRegion);
+        _headerCurrency.text = RouteBoardReport.FormatHeaderLine(cur, _offers[0].GameDay);
+      }
+      else
+        _headerCurrency.text = "";
       PopulateRows();
       if (_rows.Count > 0)
-        Select(0);
+      {
+        var firstUnlocked = 0;
+        for (var i = 0; i < _rows.Count; i++)
+        {
+          if (!_rows[i].Locked)
+          {
+            firstUnlocked = i;
+            break;
+          }
+        }
+        Select(firstUnlocked);
+      }
 
       _root.SetActive(true);
       MouseLook.ToggleMouseLookAndCursor(false);
@@ -108,6 +140,7 @@ namespace Routier
       for (var i = 0; i < _offers.Count; i++)
       {
         var offer = _offers[i];
+        var locked = !RouteTierTable.PlayerCanAccessOffer(_playerRepLevel, offer, _cfg);
         var y = ListStartY + i * (RowH + RowGap);
 
         var rowGo = new GameObject("Row" + i, typeof(RectTransform));
@@ -120,30 +153,36 @@ namespace Routier
         rt.sizeDelta = new Vector2(ListW, RowH);
 
         var bg = rowGo.AddComponent<Image>();
-        bg.color = RowNormal;
+        bg.color = locked ? RowLocked : RowNormal;
 
         var button = rowGo.AddComponent<Button>();
         var colors = button.colors;
-        colors.highlightedColor = new Color(1f, 1f, 1f, 0.32f);
-        colors.pressedColor = new Color(1f, 1f, 1f, 0.45f);
+        colors.highlightedColor = locked
+          ? new Color(0.55f, 0.55f, 0.55f, 0.35f)
+          : new Color(1f, 1f, 1f, 0.32f);
+        colors.pressedColor = locked
+          ? new Color(0.6f, 0.6f, 0.6f, 0.45f)
+          : new Color(1f, 1f, 1f, 0.45f);
         button.colors = colors;
 
-        var cur = PlayerGold.GetCurrencyName(offer.HubRegion);
-        AddText(rt, 12, 6, ListW - 24, 30, Capitalize(offer.Tier) + " " + Capitalize(offer.Kind),
-          22, TextAnchor.UpperLeft, true);
-        AddText(rt, 12, 6, ListW - 24, 30, offer.Price + " " + cur,
-          22, TextAnchor.UpperRight, true);
+        var ink = locked ? InkLocked : InkColor;
+        var tierPart = locked
+          ? "<color=#AA2222><b>Tier " + offer.RouteTier + "</b></color>"
+          : "<b>Tier " + offer.RouteTier + "</b>";
+        var titleLine = tierPart + " · " + Capitalize(offer.Tier) + " " + Capitalize(offer.Kind);
+        AddText(rt, 12, 6, ListW - 24, 30, titleLine, 22, TextAnchor.UpperLeft, false, true, ink);
+        AddText(rt, 12, 6, ListW - 24, 30, offer.Price.ToString(),
+          22, TextAnchor.UpperRight, true, true, ink);
 
         var profitD = offer.DisplayProfit > 0 ? offer.DisplayProfit : offer.Profit;
-        AddText(rt, 12, 42, ListW - 24, 28,
-          "~" + profitD + " " + cur + " profit  ·  " + offer.Plan.Route.Count + " stops  ·  ROI "
-          + Mathf.RoundToInt(offer.Roi * 100f) + "%",
-          17, TextAnchor.UpperLeft, false);
+        var subLine = "Profit: ~" + profitD + "  ·  " + offer.Plan.Route.Count + " stops  ·  ROI "
+          + Mathf.RoundToInt(offer.Roi * 100f) + "%";
+        AddText(rt, 12, 42, ListW - 24, 28, subLine, 17, TextAnchor.UpperLeft, false, true, ink);
 
         var idx = i;
         button.onClick.AddListener(() => Select(idx));
 
-        _rows.Add(new RowRefs { Go = rowGo, Background = bg });
+        _rows.Add(new RowRefs { Go = rowGo, Background = bg, Locked = locked });
       }
     }
 
@@ -153,37 +192,54 @@ namespace Routier
         return;
       _selected = index;
       for (var i = 0; i < _rows.Count; i++)
-        _rows[i].Background.color = i == index ? RowSelected : RowNormal;
+      {
+        var row = _rows[i];
+        if (i == index)
+          row.Background.color = row.Locked ? RowLockedSelected : RowSelected;
+        else
+          row.Background.color = row.Locked ? RowLocked : RowNormal;
+      }
 
       var offer = _offers[index];
+      var locked = _rows[index].Locked;
+      var reqRep = RouteTierTable.RequiredPlayerRep(offer);
       var cur = PlayerGold.GetCurrencyName(offer.HubRegion);
-      var miles = Mathf.RoundToInt(RouteParchmentBuilder.DistanceMiles(offer.TotalDistanceKm));
+      var nm = Mathf.RoundToInt(offer.TotalDistanceNm);
       var capitalD = RouteDisplay.RawToDisplay(offer.CapitalInitial, offer.HubRegion);
       var profitD = offer.DisplayProfit > 0 ? offer.DisplayProfit : offer.Profit;
 
-      _detailTitle.text = "<b>" + Capitalize(offer.Tier) + " " + Capitalize(offer.Kind) + " route</b>";
+      _detailTitle.text = "<b>Tier " + offer.RouteTier + " · " + Capitalize(offer.Tier) + " " + Capitalize(offer.Kind) + "</b>";
       _detailRoute.text = offer.Plan?.RouteNames != null
         ? string.Join("  ->  ", offer.Plan.RouteNames)
         : "";
-      _detailCurrency.text = cur;
 
       _detailStatsLabels.text = "Hops:\nDistance:\nBudget:\nEst. profit:\nROI:\nPeak weight:\nPeak volume:";
       _detailStatsValues.text =
         offer.Plan.Route.Count + "\n" +
-        "~" + miles + " mi\n" +
+        "~" + nm + " nm\n" +
         capitalD + "\n" +
         "~" + profitD + "\n" +
         Mathf.RoundToInt(offer.Roi * 100f) + "%\n" +
         Mathf.RoundToInt(offer.Plan.WeightUsed) + " lb\n" +
         Mathf.RoundToInt(offer.Plan.VolumeUsed) + " ft³";
 
-      _buyButtonLabel.text = "<b>Buy — " + offer.Price + " " + cur + "</b>";
+      if (locked)
+        _buyButtonLabel.text = "<b>Rep L" + reqRep + " required</b>";
+      else
+        _buyButtonLabel.text = "<b>Buy — " + offer.Price + " " + cur + "</b>";
+      _buyButton.interactable = !locked;
     }
 
     private void OnBuyClicked()
     {
       if (_offers == null || _selected < 0 || _selected >= _offers.Count)
         return;
+      if (_rows[_selected].Locked)
+      {
+        var req = RouteTierTable.RequiredPlayerRep(_offers[_selected]);
+        NotificationUi.instance.ShowNotification(RouteNotifications.NeedRepLevel(req));
+        return;
+      }
       var offer = _offers[_selected];
 
       var region = offer.HubRegion;
@@ -194,29 +250,77 @@ namespace Routier
       }
       if (PlayerGold.currency[region] < offer.Price)
       {
-        NotificationUi.instance.ShowNotification("Not enough money for this route guide.");
+        NotificationUi.instance.ShowNotification(RouteNotifications.NotEnoughMoney());
         return;
       }
 
       PlayerGold.currency[region] -= offer.Price;
 
-      var port = Port.ports != null && _hubPortIndex >= 0 && _hubPortIndex < Port.ports.Length
-        ? Port.ports[_hubPortIndex]
-        : null;
-      var spawnPos = port != null
-        ? port.transform.position + port.transform.forward * 1.2f + Vector3.up * 1.1f
-        : Vector3.zero;
+      if (!TryGetParchmentSpawn(_hubPortIndex, out var spawnPos, out var spawnRot))
+      {
+        spawnPos = Vector3.zero;
+        spawnRot = Quaternion.identity;
+      }
 
-      RouteParchmentFactory.Spawn(spawnPos, Quaternion.identity, offer.Pages);
+      RouteParchmentFactory.Spawn(spawnPos, spawnRot, offer.Pages);
 
       var profitD = offer.DisplayProfit > 0 ? offer.DisplayProfit : offer.Profit;
-      var cur = PlayerGold.GetCurrencyName(offer.HubRegion);
       NotificationUi.instance.ShowNotification(
-        "Route guide: " + offer.Tier + " " + offer.Kind + " (~" + profitD + " " + cur + " profit est.)");
+        RouteNotifications.GuidePurchased(offer.Tier, offer.Kind, profitD));
       UISoundPlayer.instance.PlayWritingSound();
       UISoundPlayer.instance.PlayGoldSound();
 
       Close();
+    }
+
+    /// <summary>Spawn purchased parchment — Hack local (−0.5, 1.8, −0.7) on the kiosk.</summary>
+    private static readonly Vector3 GrcParchmentSpawnLocal = new Vector3(-0.5f, 1.8f, -0.7f);
+
+    private static bool TryGetParchmentSpawn(int hubPortIndex, out Vector3 position, out Quaternion rotation)
+    {
+      position = Vector3.zero;
+      rotation = Quaternion.identity;
+
+      var kiosk = FindHubKiosk(hubPortIndex);
+      if (kiosk == null)
+        return false;
+
+      var yaw = MarketStallVisual.KioskYaw(kiosk);
+      rotation = Quaternion.Euler(0f, yaw, 0f);
+      position = kiosk.TransformPoint(GrcParchmentSpawnLocal);
+
+      var book = kiosk.Find("RoutierRouteBook");
+      if (book != null)
+        rotation = book.rotation;
+
+      return true;
+    }
+
+    private static Transform FindHubKiosk(int hubPortIndex)
+    {
+      if (Port.ports != null && hubPortIndex >= 0 && hubPortIndex < Port.ports.Length)
+      {
+        var port = Port.ports[hubPortIndex];
+        if (port != null)
+        {
+          var underPort = port.transform.Find("RoutierRouteKiosk");
+          if (underPort != null)
+            return underPort;
+        }
+      }
+
+      foreach (var go in Resources.FindObjectsOfTypeAll<GameObject>())
+      {
+        if (go == null || go.name != "RoutierRouteKiosk")
+          continue;
+        if (!go.scene.IsValid() || !go.scene.isLoaded)
+          continue;
+        var agent = go.GetComponentInChildren<RouteAgentKiosk>(true);
+        if (agent != null && agent.hubPortIndex == hubPortIndex)
+          return go.transform;
+      }
+
+      return null;
     }
 
     private static string Capitalize(string s)
@@ -265,21 +369,20 @@ namespace Routier
       _panelRect.sizeDelta = new Vector2(PanelW, PanelH);
       panelGo.AddComponent<Image>().color = PanelColor;
 
-      _titleText = AddText(_panelRect, 30, 20, PanelW - 110, 44, "", 30, TextAnchor.UpperLeft, true);
-      AddHDivider(_panelRect, 30, 72, PanelW - 60);
+      _titleText = AddText(_panelRect, 30, 20, PanelW - 110, 36, "", 28, TextAnchor.UpperLeft, true);
+      _headerCurrency = AddText(_panelRect, 30, 54, PanelW - 110, 34, "", 15, TextAnchor.UpperLeft, false, false);
+      AddHDivider(_panelRect, 30, 84, PanelW - 60);
 
       var (closeBtnGo, closeButton, _) = CreateButton(_panelRect, PanelW - 70, 16, 44, 44, "X", 24);
       closeButton.onClick.AddListener(Close);
 
-      AddVDivider(_panelRect, PanelW / 2, ListStartY - 8, PanelH - ListStartY - 30);
+      AddVDivider(_panelRect, PanelW / 2, ListStartY - 4, PanelH - ListStartY - 30);
 
-      _detailTitle = AddText(_panelRect, DetailX, ListStartY, DetailW, 40, "", 28, TextAnchor.UpperLeft, true);
-      AddText(_panelRect, DetailX, ListStartY + 46, DetailW, 30, "Route:", 20, TextAnchor.UpperLeft, true);
-      _detailRoute = AddText(_panelRect, DetailX, ListStartY + 76, DetailW, 90, "", 20, TextAnchor.UpperLeft, false, false);
-      AddText(_panelRect, DetailX, ListStartY + 176, DetailW, 30, "Currency:", 20, TextAnchor.UpperLeft, true);
-      _detailCurrency = AddText(_panelRect, DetailX, ListStartY + 206, DetailW, 30, "", 20, TextAnchor.UpperLeft, false);
+      _detailTitle = AddText(_panelRect, DetailX, ListStartY, DetailW, 30, "", 20, TextAnchor.UpperLeft, true, false);
+      AddText(_panelRect, DetailX, ListStartY + 40, DetailW, 30, "Route:", 20, TextAnchor.UpperLeft, true);
+      _detailRoute = AddText(_panelRect, DetailX, ListStartY + 70, DetailW, 90, "", 20, TextAnchor.UpperLeft, false, false);
 
-      var statsY = ListStartY + 254;
+      var statsY = ListStartY + 170;
       _detailStatsLabels = AddText(_panelRect, DetailX, statsY, 195, 300, "", 22, TextAnchor.UpperLeft, false, false);
       _detailStatsValues = AddText(_panelRect, DetailX + 205, statsY, DetailW - 205, 300, "", 22, TextAnchor.UpperRight, false, false);
 
@@ -302,7 +405,7 @@ namespace Routier
 
     private Text AddText(
       RectTransform parent, float xPx, float yFromTopPx, float widthPx, float heightPx, string text,
-      int fontSize, TextAnchor anchor, bool bold, bool singleLine = true)
+      int fontSize, TextAnchor anchor, bool bold, bool singleLine = true, Color? color = null)
     {
       var go = new GameObject("Txt", typeof(RectTransform));
       go.transform.SetParent(parent, false);
@@ -318,10 +421,10 @@ namespace Routier
       uiText.font = RouteParchmentPageTexture.GetFont();
       uiText.fontSize = fontSize;
       uiText.alignment = anchor;
-      uiText.color = InkColor;
+      uiText.color = color ?? InkColor;
       uiText.supportRichText = true;
       uiText.text = bold ? "<b>" + text + "</b>" : text;
-      uiText.horizontalOverflow = HorizontalWrapMode.Wrap;
+      uiText.horizontalOverflow = singleLine ? HorizontalWrapMode.Overflow : HorizontalWrapMode.Wrap;
       uiText.verticalOverflow = singleLine ? VerticalWrapMode.Truncate : VerticalWrapMode.Overflow;
       if (singleLine)
       {

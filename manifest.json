@@ -1,6 +1,6 @@
 {
   "name": "Routier",
-  "version_number": "0.5.4",
+  "version_number": "0.8.5",
   "website_url": "https://github.com/g1llez/sailwind-routier",
   "description": "Routier adds a trading layer to SailWind — market intel, agent contracts, and a real economic pulse to the archipelago.",
   "dependencies": [

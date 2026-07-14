@@ -55,5 +55,12 @@ namespace Routier
       }
       GameState.modData[Key] = sb.ToString();
     }
+
+    internal static void Clear()
+    {
+      Live.Clear();
+      if (GameState.modData != null)
+        GameState.modData.Remove(Key);
+    }
   }
 }

@@ -1,5 +1,4 @@
 using System;
-using System.IO;
 using BepInEx;
 using BepInEx.Configuration;
 using HarmonyLib;
@@ -11,7 +10,7 @@ namespace Routier
     public sealed class Plugin : BaseUnityPlugin
     {
         internal static Plugin Instance { get; private set; }
-        internal static RoutierDatabase Database { get; private set; }
+        internal static RoutierDatabase Database => DatabaseSession.Active;
         internal static BepInEx.Logging.ManualLogSource Log { get; private set; }
 
         private ConfigEntry<float> _intervalGameHours;
@@ -27,6 +26,12 @@ namespace Routier
         private ConfigEntry<int> _routesHopsMin;
         private ConfigEntry<int> _routesHopsMax;
         private ConfigEntry<int> _routesSamples;
+
+        private GenerationConfig _genConfig;
+
+        internal GenerationConfig GenerationConfig => _genConfig;
+
+        internal int RoutesGenerationHour => _routesHour != null ? _routesHour.Value : 8;
 
         private SnapshotScheduler _scheduler;
 
@@ -45,16 +50,17 @@ namespace Routier
                 "Storage",
                 "DatabasePath",
                 "",
-                "Optional full path to routier.db. Empty = BepInEx/plugins/Routier/data/routier.db");
+                "Optional Routier data directory, or a legacy .db file path override. "
+                + "Empty = BepInEx/plugins/Routier/data with per-save routier_slotN.db files.");
 
             _routesEnabled = Config.Bind("Routes", "Enabled", true,
                 "Generate trade routes once per in-game day and log them.");
             _routesHour = Config.Bind("Routes", "GenerationHour", 8,
                 "In-game hour (0-23) at which the daily routes are generated.");
-            _routesLocalCount = Config.Bind("Routes", "LocalCount", 4,
-                "Number of same-region routes offered per hub port.");
+            _routesLocalCount = Config.Bind("Routes", "LocalCount", 5,
+                "Number of same-region route slots on the daily board per hub port.");
             _routesRegionalCount = Config.Bind("Routes", "RegionalCount", 2,
-                "Number of cross-region routes offered per hub port.");
+                "Number of cross-region route slots on the daily board per hub port.");
             _routesRoiFloor = Config.Bind("Routes", "RoiFloor", 0.20f,
                 "Minimum return on invested capital for a route to be offered.");
             _routesBudgetMin = Config.Bind("Routes", "BudgetMin", 2000,
@@ -72,16 +78,11 @@ namespace Routier
             {
                 Harmony.CreateAndPatchAll(typeof(Plugin).Assembly);
 
-                var dbPath = ResolveDatabasePath(_databasePath.Value);
-                Database = new RoutierDatabase(dbPath);
-                Database.Initialize();
+                DatabaseSession.Configure(_databasePath.Value);
 
                 _scheduler = gameObject.AddComponent<SnapshotScheduler>();
                 _scheduler.Configure(_intervalGameHours.Value);
-                _scheduler.ConfigureGeneration(
-                    _routesEnabled.Value,
-                    _routesHour.Value,
-                    new GenerationConfig
+                _genConfig = new GenerationConfig
                     {
                         LocalCount = _routesLocalCount.Value,
                         RegionalCount = _routesRegionalCount.Value,
@@ -91,12 +92,16 @@ namespace Routier
                         HopsMin = _routesHopsMin.Value,
                         HopsMax = _routesHopsMax.Value,
                         SamplesPerList = _routesSamples.Value,
-                    });
+                    };
+                _scheduler.ConfigureGeneration(
+                    _routesEnabled.Value,
+                    _routesHour.Value,
+                    _genConfig);
 
                 gameObject.AddComponent<HubKioskInstaller>();
-                RouteParchmentRegistry.LoadFromGameState();
+                gameObject.AddComponent<SaveSessionWatcher>();
 
-                Log.LogInfo($"{PluginInfo.Name} {PluginInfo.Version} — database: {dbPath}");
+                Log.LogInfo($"{PluginInfo.Name} {PluginInfo.Version} — per-save DBs in {DatabaseSession.DataDirectory}");
             }
             catch (Exception ex)
             {
@@ -104,21 +109,12 @@ namespace Routier
             }
         }
 
-        internal static string ResolveDatabasePath(string configuredPath)
-        {
-            if (!string.IsNullOrWhiteSpace(configuredPath))
-                return Path.GetFullPath(configuredPath.Trim());
-
-            var pluginDir = Path.Combine(Paths.PluginPath, PluginInfo.Name, "data");
-            Directory.CreateDirectory(pluginDir);
-            return Path.Combine(pluginDir, "routier.db");
-        }
-
         internal bool CanCapture()
         {
-            if (Database == null)
-                return false;
             if (!GameState.playing)
+                return false;
+            DatabaseSession.EnsureForCurrentSlot();
+            if (Database == null)
                 return false;
             if (GameState.currentlyLoading)
                 return false;
